@@ -1,0 +1,53 @@
+/* Copyright (c) Microsoft Corporation. All rights reserved. */
+/* Licensed under the MIT License. */
+
+enclave {
+	from "openenclave/stdio.edl" import *;
+
+    trusted {
+        public int ecall_TaCreateMasterEncryptionKey();
+		public int ecall_TaDestroyMasterEncryptionKey();
+
+		public int ecall_TaGetRandomBytes(
+            [out, size=buffer_size] unsigned char* buffer,
+            size_t buffer_size);
+
+		public int ecall_TaEncryptData(
+			[in, size=plaintext_len] const unsigned char* plaintext,
+			size_t plaintext_len,
+			[in, size=aad_len] const unsigned char* aad,
+			size_t aad_len,
+			[in, size=iv_len] const unsigned char* iv,
+			size_t iv_len,
+			[out, size=output_buffer_size] unsigned char* output_buffer,
+			size_t output_buffer_size);
+
+		public int ecall_TaDecryptData(
+			[in, size=ciphertext_buffer_size] const unsigned char* ciphertext_buffer,
+			size_t ciphertext_buffer_size,
+			[in, size=aad_len] const unsigned char* aad,
+			size_t aad_len,
+			[in, size=iv_len] const unsigned char* iv,
+			size_t iv_len,
+			[out, size=output_buffer_size] unsigned char* output_buffer,
+			size_t output_buffer_size);
+
+		public int ecall_TaSetSigningKey(
+			[in, size=key_len] const unsigned char* key,
+			size_t key_len);
+
+		public int ecall_TaSignData(
+			[in, size=data_to_be_signed_size] const unsigned char* data_to_be_signed,
+			size_t data_to_be_signed_size,
+			[out, size=digest_size] unsigned char* digest,
+			size_t digest_size);
+
+		public int ecall_TaDeriveAndSignData(
+			[in, size=identity_size] const unsigned char* identity,
+			size_t identity_size,
+			[in, size=data_to_be_signed_size] const unsigned char* data_to_be_signed,
+			size_t data_to_be_signed_size,
+			[out, size=digest_size] unsigned char* digest,
+			size_t digest_size);
+    };
+};

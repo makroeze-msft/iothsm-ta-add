@@ -302,3 +302,12 @@ __pycache__/
 *.btm.cs
 *.odx.cs
 *.xsd.cs
+
+# Generated solution files
+*.sln
+*.vcxproj.filters
+*.vcxproj
+CMakeCache.txt
+CPackConfig.cmake
+CPackSourceConfig.cmake
+cmake_install.cmake

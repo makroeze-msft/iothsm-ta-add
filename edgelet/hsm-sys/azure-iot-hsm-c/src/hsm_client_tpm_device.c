@@ -346,7 +346,8 @@ static int hsm_client_tpm_activate_identity_key
             result = 0;
         }
     }
-    return result;
+
+	return result;
 }
 
 static int hsm_client_tpm_get_endorsement_key
@@ -491,7 +492,8 @@ static int hsm_client_tpm_sign_data
             }
         }
     }
-    return result;
+
+	return result;
 }
 
 static int hsm_client_tpm_derive_and_sign_with_identity
@@ -577,7 +579,8 @@ static int hsm_client_tpm_derive_and_sign_with_identity
             memset(data_signature, 0, TPM_DATA_LENGTH);
         }
     }
-    return result;
+
+	return result;
 }
 
 static void hsm_client_tpm_free_buffer(void* buffer)

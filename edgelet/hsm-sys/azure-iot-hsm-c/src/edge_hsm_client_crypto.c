@@ -10,8 +10,16 @@
 #include "hsm_log.h"
 #include "hsm_constants.h"
 
+#ifdef IOTHSM_USE_TA
+    #include "enc_u.h"
+	#include "common.h"
+#endif
+
 struct EDGE_CRYPTO_TAG
 {
+#ifdef IOTHSM_USE_TA
+	oe_enclave_t* enclave;
+#endif
     HSM_CLIENT_STORE_HANDLE hsm_store_handle;
 };
 typedef struct EDGE_CRYPTO_TAG EDGE_CRYPTO;
@@ -108,6 +116,14 @@ static HSM_CLIENT_HANDLE edge_hsm_client_crypto_create(void)
         free(edge_crypto);
         result = NULL;
     }
+#ifdef IOTHSM_USE_TA
+	else if ((oe_create_enc_enclave("enc", OE_ENCLAVE_TYPE_DEFAULT, 0, NULL, 0, &edge_crypto->enclave)) != OE_OK)
+	{
+		LOG_ERROR("Could not create enclave");
+		free(edge_crypto);
+		result = NULL;
+	}
+#endif
     else
     {
         result = (HSM_CLIENT_HANDLE)edge_crypto;
@@ -129,13 +145,24 @@ static void edge_hsm_client_crypto_destroy(HSM_CLIENT_HANDLE handle)
         {
             LOG_ERROR("Could not close store handle. Error code %d", status);
         }
+
+#ifdef IOTHSM_USE_TA
+		if (oe_terminate_enclave(edge_crypto->enclave) != OE_OK)
+		{
+			LOG_ERROR("Could not terminate enclave");
+		}
+#endif
+
         free(edge_crypto);
     }
 }
 
 static int edge_hsm_client_get_random_bytes(HSM_CLIENT_HANDLE handle, unsigned char* rand_buffer, size_t num_bytes)
 {
-    int result;
+	int result = 0;
+#ifdef IOTHSM_USE_TA
+	EDGE_CRYPTO *edge_crypto = (EDGE_CRYPTO*) handle;
+#endif
     if (!g_is_crypto_initialized)
     {
         LOG_ERROR("hsm_client_crypto_init not called");
@@ -156,6 +183,13 @@ static int edge_hsm_client_get_random_bytes(HSM_CLIENT_HANDLE handle, unsigned c
         LOG_ERROR("Invalid number of bytes specified");
         result = __FAILURE__;
     }
+#ifdef IOTHSM_USE_TA
+	else if (ecall_TaGetRandomBytes(edge_crypto->enclave, &result, rand_buffer, num_bytes) != OE_OK || result != 0)
+	{
+		LOG_ERROR("TaGetRandomBytes ecall failed");
+		result = __FAILURE__;
+	}
+#else
     else
     {
         // todo use OpenSSL RAND_BUFFER and CNG rand API
@@ -164,14 +198,16 @@ static int edge_hsm_client_get_random_bytes(HSM_CLIENT_HANDLE handle, unsigned c
         {
             *rand_buffer++ = rand() % 256;
         }
-        result = 0;
     }
-    return result;
+#endif
+
+	return result;
 }
 
 static int edge_hsm_client_create_master_encryption_key(HSM_CLIENT_HANDLE handle)
 {
-    int result;
+	int result = 0;
+	EDGE_CRYPTO *edge_crypto = (EDGE_CRYPTO*) handle;
 
     if (!g_is_crypto_initialized)
     {
@@ -183,27 +219,28 @@ static int edge_hsm_client_create_master_encryption_key(HSM_CLIENT_HANDLE handle
         LOG_ERROR("Invalid handle value specified");
         result = __FAILURE__;
     }
-    else
+#ifdef IOTHSM_USE_TA
+	else if (ecall_TaCreateMasterEncryptionKey(edge_crypto->enclave, &result) != OE_OK || result != 0)
+	{
+		LOG_ERROR("TaCreateMasterEncryptionKey ecall failed");
+		result = __FAILURE__;
+	}
+#else
+    else if (g_hsm_store_if->hsm_client_store_insert_encryption_key(edge_crypto->hsm_store_handle,
+																	EDGELET_ENC_KEY_NAME) != 0)
     {
-        EDGE_CRYPTO *edge_crypto = (EDGE_CRYPTO*)handle;
-        if (g_hsm_store_if->hsm_client_store_insert_encryption_key(edge_crypto->hsm_store_handle,
-                                                                   EDGELET_ENC_KEY_NAME) != 0)
-        {
-            LOG_ERROR("Could not insert encryption key %s", EDGELET_ENC_KEY_NAME);
-            result = __FAILURE__;
-        }
-        else
-        {
-            result = 0;
-        }
+        LOG_ERROR("Could not insert encryption key %s", EDGELET_ENC_KEY_NAME);
+        result = __FAILURE__;
     }
+#endif
 
-    return result;
+	return result;
 }
 
 static int edge_hsm_client_destroy_master_encryption_key(HSM_CLIENT_HANDLE handle)
 {
-    int result;
+	int result = 0;
+	EDGE_CRYPTO *edge_crypto = (EDGE_CRYPTO*) handle;
 
     if (!g_is_crypto_initialized)
     {
@@ -215,23 +252,23 @@ static int edge_hsm_client_destroy_master_encryption_key(HSM_CLIENT_HANDLE handl
         LOG_ERROR("Invalid handle value specified");
         result = __FAILURE__;
     }
-    else
+#ifdef IOTHSM_USE_TA
+	else if (ecall_TaDestroyMasterEncryptionKey(edge_crypto->enclave, &result) != OE_OK || result != 0)
+	{
+		LOG_ERROR("TaDestroyMasterEncryptionKey ecall failed");
+		result = __FAILURE__;
+	}
+#else
+    else if (g_hsm_store_if->hsm_client_store_remove_key(edge_crypto->hsm_store_handle,
+														 HSM_KEY_ENCRYPTION,
+                                                         EDGELET_ENC_KEY_NAME) != 0)
     {
-        EDGE_CRYPTO *edge_crypto = (EDGE_CRYPTO*)handle;
-        if (g_hsm_store_if->hsm_client_store_remove_key(edge_crypto->hsm_store_handle,
-                                                        HSM_KEY_ENCRYPTION,
-                                                        EDGELET_ENC_KEY_NAME) != 0)
-        {
-            LOG_ERROR("Could not remove encryption key %s", EDGELET_ENC_KEY_NAME);
-            result = __FAILURE__;
-        }
-        else
-        {
-            result = 0;
-        }
+        LOG_ERROR("Could not remove encryption key %s", EDGELET_ENC_KEY_NAME);
+        result = __FAILURE__;
     }
+#endif
 
-    return result;
+	return result;
 }
 
 static CERT_INFO_HANDLE edge_hsm_client_create_certificate(HSM_CLIENT_HANDLE handle, CERT_PROPS_HANDLE certificate_props)
@@ -351,13 +388,49 @@ static int encrypt_data
     SIZED_BUFFER *ct
 )
 {
-    int result;
-    KEY_HANDLE key_handle;
+	int result = 0;
+
+#ifdef IOTHSM_USE_TA
+	if (edge_crypto == NULL ||
+		id == NULL ||
+		pt == NULL ||
+		iv == NULL ||
+		ct == NULL)
+	{
+		LOG_ERROR("Invalid argument to encrypt_data");
+		result = __FAILURE__;
+	}
+	else
+	{
+		ct->size = pt->size + CIPHER_HEADER_V1_SIZE_BYTES;
+		ct->buffer = malloc(ct->size);
+		if (ct->buffer == NULL)
+		{
+			LOG_ERROR("Could not allocate memory to encrypt data");
+			result = __FAILURE__;
+		}
+		else if(ecall_TaEncryptData(edge_crypto->enclave,
+									&result,
+									pt->buffer,
+									pt->size,
+									id->buffer,
+									id->size,
+									iv->buffer,
+									iv->size,
+									ct->buffer,
+									ct->size) != OE_OK)
+		{
+			LOG_ERROR("TaEncryptData ecall failed");
+			result = __FAILURE__;
+		}
+	}
+#else
     const HSM_CLIENT_STORE_INTERFACE *store_if = g_hsm_store_if;
     const HSM_CLIENT_KEY_INTERFACE *key_if = g_hsm_key_if;
-    key_handle = store_if->hsm_client_store_open_key(edge_crypto->hsm_store_handle,
-                                                     HSM_KEY_ENCRYPTION,
-                                                     EDGELET_ENC_KEY_NAME);
+
+	KEY_HANDLE key_handle = store_if->hsm_client_store_open_key(edge_crypto->hsm_store_handle,
+                                                    HSM_KEY_ENCRYPTION,
+                                                    EDGELET_ENC_KEY_NAME);
     if (key_handle == NULL)
     {
         LOG_ERROR("Could not get encryption key by name '%s'", EDGELET_ENC_KEY_NAME);
@@ -383,8 +456,9 @@ static int encrypt_data
             result = __FAILURE__;
         }
     }
+#endif
 
-    return result;
+	return result;
 }
 
 static int decrypt_data
@@ -396,13 +470,48 @@ static int decrypt_data
     SIZED_BUFFER *pt
 )
 {
-    int result;
+	int result = 0;
+
+#ifdef IOTHSM_USE_TA
+	if (edge_crypto == NULL ||
+		id == NULL ||
+		ct == NULL ||
+		iv == NULL ||
+		pt == NULL)
+	{
+		LOG_ERROR("Invalid argument to decrypt_data");
+		result = __FAILURE__;
+	}
+	else
+	{
+		pt->size = ct->size - CIPHER_HEADER_V1_SIZE_BYTES;
+		pt->buffer = malloc(pt->size);
+		if (pt->buffer == NULL) {
+			LOG_ERROR("Could not allocate memory to decrypt data");
+			result =  __FAILURE__;
+		}
+		else if (ecall_TaDecryptData(edge_crypto->enclave,
+									 &result,
+									 ct->buffer,
+									 ct->size,
+									 id->buffer,
+									 id->size,
+									 iv->buffer,
+									 iv->size,
+									 pt->buffer,
+									 pt->size) != OE_OK)
+		{
+			LOG_ERROR("TaDecryptData ecall failed");
+			result = __FAILURE__;
+		}
+	}
+#else
     KEY_HANDLE key_handle;
     const HSM_CLIENT_STORE_INTERFACE *store_if = g_hsm_store_if;
     const HSM_CLIENT_KEY_INTERFACE *key_if = g_hsm_key_if;
     key_handle = store_if->hsm_client_store_open_key(edge_crypto->hsm_store_handle,
-                                                     HSM_KEY_ENCRYPTION,
-                                                     EDGELET_ENC_KEY_NAME);
+                                                    HSM_KEY_ENCRYPTION,
+                                                    EDGELET_ENC_KEY_NAME);
     if (key_handle == NULL)
     {
         LOG_ERROR("Could not get encryption key by name '%s'", EDGELET_ENC_KEY_NAME);
@@ -428,8 +537,9 @@ static int decrypt_data
             result = __FAILURE__;
         }
     }
+#endif
 
-    return result;
+	return result;
 }
 
 static int edge_hsm_client_encrypt_data

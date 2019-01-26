@@ -175,3 +175,23 @@ set (CPACK_RPM_PACKAGE_LICENSE "Proprietary")
 
 include (CPack)
 
+OPTION (USE_TA "" OFF)
+
+if (USE_TA)
+    add_definitions (-DIOTHSM_USE_TA=1)
+
+    set (TA_LIB "../azure-iot-hsm-ta/ta/enc")
+    set (OE_LIB "../azure-iot-hsm-ta/deps/openenclave/new_platforms/bin/x64/Debug")
+    target_link_libraries (iothsm ${TA_LIB} ${OE_LIB})
+
+    set (TA_GENERATED_INC "../azure-iot-hsm-ta/ta/enc")
+    set (TA_COMMON_INC "../azure-iot-hsm-ta/ta/common")
+    set (OE_INC "../azure-iot-hsm-ta/deps/openenclave/include")
+    set (OE_NEWPLAT_INC "../azure-iot-hsm-ta/deps/openenclave/new_platforms/include")
+    set (SGX_INC "C:/Program Files (x86)/Intel/IntelSGXSDK/include")
+    set (SGX_TLIBC_INC "C:/Program Files (x86)/Intel/IntelSGXSDK/include/tlibc")
+    set (SGX_LIBCXX_INC "C:/Program Files (x86)/Intel/IntelSGXSDK/include/libc++")
+    include_directories (${TA_GENERATED_INC} ${TA_COMMON_INC} ${OE_INC} ${OE_NEWPLAT_INC} ${SGX_INC})
+
+    message ("testing message")
+endif()

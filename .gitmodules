@@ -4,3 +4,6 @@
 [submodule "edgelet/hsm-sys/azure-iot-hsm-c/deps/azure-utpm-c"]
 	path = edgelet/hsm-sys/azure-iot-hsm-c/deps/utpm
 	url = https://github.com/Azure/azure-utpm-c.git
+[submodule "edgelet/hsm-sys/azure-iot-hsm-ta/deps/openenclave"]
+	path = edgelet/hsm-sys/azure-iot-hsm-ta/deps/openenclave
+	url = https://github.com/Microsoft/openenclave.git
